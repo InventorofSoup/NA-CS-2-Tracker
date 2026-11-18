@@ -1,5 +1,41 @@
 [
   {
+    "id": "nstlga-2026-league-season-2",
+    "organizer_id": "nstlga",
+    "organizer": "NSTLGA",
+    "name": "NSTLGA League Season 2",
+    "start_date": "2026-08-03",
+    "end_date": "2026-09-13",
+    "source_url": "https://www.nstlga.gg/events/league-season-2",
+    "verification_url": "https://www.nstlga.gg/events/league-season-2",
+    "detail_level": "event_only",
+    "verified_at": "2026-11-18T16:05:48+00:00"
+  },
+  {
+    "id": "nstlga-2026-emerald-cup",
+    "organizer_id": "nstlga",
+    "organizer": "NSTLGA",
+    "name": "NSTLGA Emerald Cup",
+    "start_date": "2026-10-16",
+    "end_date": "2026-10-18",
+    "source_url": "https://www.nstlga.gg/events/emerald-cup",
+    "verification_url": "https://www.nstlga.gg/events/emerald-cup",
+    "detail_level": "event_only",
+    "verified_at": "2026-11-18T16:05:46+00:00"
+  },
+  {
+    "id": "nstlga-2026-texas-open-lan",
+    "organizer_id": "nstlga",
+    "organizer": "NSTLGA",
+    "name": "NSTLGA Texas Open LAN",
+    "start_date": "2026-10-30",
+    "end_date": "2026-11-01",
+    "source_url": "https://www.nstlga.gg/events/texas-open-lan",
+    "verification_url": "https://www.nstlga.gg/events/texas-open-lan",
+    "detail_level": "event_only",
+    "verified_at": "2026-11-18T16:05:48+00:00"
+  },
+  {
     "id": "crossfire-2026-season-7",
     "organizer_id": "crossfire",
     "organizer": "Crossfire",
