@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "id": "crossfire-2026-season-7",
+    "organizer_id": "crossfire",
+    "organizer": "Crossfire",
+    "name": "Crossfire Season 7",
+    "start_date": "2026-11-02",
+    "end_date": "2026-12-13",
+    "source_url": "https://www.crossfire.to/",
+    "verification_url": "https://raw.githubusercontent.com/CrossfireGG/Season-7/main/README.md",
+    "detail_level": "event_only",
+    "verified_at": "2026-11-18T15:40:09+00:00"
+  },
+  {
+    "id": "nstlga-2026-black-pearl",
+    "organizer_id": "nstlga",
+    "organizer": "NSTLGA",
+    "name": "NSTLGA Black Pearl Cup",
+    "start_date": "2026-12-08",
+    "end_date": "2026-12-18",
+    "source_url": "https://www.nstlga.gg/events/black-pearl-cup",
+    "verification_url": "https://www.nstlga.gg/events/black-pearl-cup",
+    "detail_level": "event_only",
+    "verified_at": "2026-11-18T15:40:09+00:00"
+  }
+]
