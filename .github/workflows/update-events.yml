@@ -1,16 +1,16 @@
-name: Update verified NA CS2 events
+name: Update verified NA CS2 events and matches
 
 on:
   push:
     branches: [main]
     paths:
-      - index.html
-      - style.css
-      - app.js
-      - data/**
-      - collectors/**
-      - tests/**
-      - .github/workflows/update-events.yml
+      - 'index.html'
+      - 'style.css'
+      - 'app.js'
+      - 'data/**'
+      - 'collectors/**'
+      - 'tests/**'
+      - '.github/workflows/update-events.yml'
   workflow_dispatch:
   schedule:
     - cron: '17 */3 * * *'
@@ -35,18 +35,18 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Validate existing match data
         run: python collectors/validate.py
-      - name: Validate existing events (empty allowed before first run)
+      - name: Validate existing event data
         run: python collectors/validate_events.py --allow-empty
       - name: Check frontend syntax
         run: node --check app.js
-      - name: Test frontend event data rendering
+      - name: Test frontend rendering
         run: node tests/test_frontend.cjs
 
   collect:
     needs: verify
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: write
     outputs:
@@ -57,34 +57,72 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -r collectors/requirements.txt
-      - name: Collect verified events
-        id: collector
+
+      - name: Refresh established event sources
+        id: established
         continue-on-error: true
         run: python collectors/update_events.py
-      - name: Validate new events
+      - name: Discover additional Crossfire and NSTLGA events
+        id: discovery
+        continue-on-error: true
+        run: python collectors/discover_events.py
+      - name: Collect individual Crossfire and NSTLGA matches
+        id: fixtures
+        continue-on-error: true
+        run: python collectors/update_matches.py
+
+      - name: Validate event data before publication
         run: python collectors/validate_events.py
-      - name: Validate matches
+      - name: Validate match data before publication
         run: python collectors/validate.py
-      - name: Commit validated event updates
+      - name: Commit validated data changes
         run: |
-          git add data/events.json
+          git add data/events.json data/matches.json
           if git diff --cached --quiet; then
-            echo 'No event changes'
+            echo 'No data changes'
           else
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Update verified NA CS2 event data'
+            git commit -m 'Update verified NA CS2 event and match data'
             git push
           fi
-      - name: Ready for deployment
+      - name: Mark validated data ready
         id: ready
-        run: echo "ready=true" >> "$GITHUB_OUTPUT"
-      - name: Report source problems
-        if: steps.collector.outcome == 'failure'
+        run: echo 'ready=true' >> "$GITHUB_OUTPUT"
+
+      - name: Report collection results and source warnings
+        if: always()
+        env:
+          ESTABLISHED_OUTCOME: ${{ steps.established.outcome }}
+          DISCOVERY_OUTCOME: ${{ steps.discovery.outcome }}
+          FIXTURES_OUTCOME: ${{ steps.fixtures.outcome }}
         run: |
-          echo "::warning::One or more sources failed; check Collect verified events."
-          echo "### Partial source warning" >> "$GITHUB_STEP_SUMMARY"
-          echo "Some sources failed. Valid existing records were retained." >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          def count(path):
+              p = Path(path)
+              return len(json.loads(p.read_text(encoding='utf-8'))) if p.exists() else 'missing'
+
+          events = count('data/events.json')
+          matches = count('data/matches.json')
+          print(f'Published data: {events} events, {matches} matches')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              summary.write('### Data collection summary\n')
+              summary.write(f'- Verified event records: **{events}**\n')
+              summary.write(f'- Match records: **{matches}**\n')
+              for name, key in [('Established event sources', 'ESTABLISHED_OUTCOME'),
+                                ('New event discovery', 'DISCOVERY_OUTCOME'),
+                                ('Individual match collection', 'FIXTURES_OUTCOME')]:
+                  summary.write(f'- {name}: **{os.environ.get(key, "unknown")}**\n')
+          if matches == 0:
+              print('::warning::No verified individual matches were collected; review collector output and source availability.')
+          for key in ('ESTABLISHED_OUTCOME', 'DISCOVERY_OUTCOME', 'FIXTURES_OUTCOME'):
+              if os.environ.get(key) == 'failure':
+                  print(f'::warning::{key} failed; independently validated records were retained.')
+          PY
 
   deploy:
     needs: [verify, collect]
@@ -102,7 +140,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-      - name: Package static site
+      - name: Package static website with match and event data
         run: |
           mkdir -p _site/data
           cp index.html app.js style.css _site/
