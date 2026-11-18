@@ -1,0 +1,8 @@
+{
+  "sources": [
+    {"name":"Crossfire", "coverage":"North American CS2 competitions", "url":"https://www.crossfire.to/", "collector_status":"pending"},
+    {"name":"ESEA / FACEIT", "coverage":"NA leagues from Open through Advanced", "url":"https://www.faceit.com/", "collector_status":"pending"},
+    {"name":"NSTLGA", "coverage":"Community tournaments and cups", "url":"https://www.nstlga.gg/", "collector_status":"pending"},
+    {"name":"Fragadelphia", "coverage":"North American LAN and community events", "url":"https://fragadelphia.com/", "collector_status":"pending"}
+  ]
+}

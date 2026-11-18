@@ -1,0 +1,6 @@
+[
+  {"id":"crossfire","name":"Crossfire","description":"North American CS2 leagues and tournament coverage.","url":"https://www.crossfire.to/","integration_status":"planned"},
+  {"id":"esea","name":"ESEA / FACEIT","description":"North American league divisions, playoffs and qualifiers.","url":"https://www.faceit.com/","integration_status":"planned"},
+  {"id":"nstlga","name":"NSTLGA","description":"Community CS2 tournaments and competitive events.","url":"https://www.nstlga.gg/","integration_status":"planned"},
+  {"id":"fragadelphia","name":"Fragadelphia","description":"North American LAN and community tournament events.","url":"https://fragadelphia.com/","integration_status":"planned"}
+]
