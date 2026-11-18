@@ -1,0 +1,49 @@
+
+name: Update verified NA CS2 events
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */3 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: na-cs2-event-updates
+  cancel-in-progress: false
+
+jobs:
+  update-events:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: python -m pip install -r collectors/requirements.txt
+
+      - name: Collect verified events
+        run: python collectors/update_events.py
+
+      - name: Validate match data
+        run: python collectors/validate.py
+
+      - name: Publish updated event data
+        run: |
+          git add data/events.json
+          if git diff --cached --quiet; then
+            echo "No event updates."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Update verified NA CS2 events"
+            git push
+          fi
