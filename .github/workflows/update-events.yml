@@ -1,49 +1,116 @@
-
 name: Update verified NA CS2 events
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - style.css
+      - app.js
+      - data/**
+      - collectors/**
+      - tests/**
+      - .github/workflows/update-events.yml
   workflow_dispatch:
   schedule:
-    - cron: "17 */3 * * *"
-
-permissions:
-  contents: write
+    - cron: '17 */3 * * *'
 
 concurrency:
-  group: na-cs2-event-updates
+  group: na-cs2-pages
   cancel-in-progress: false
 
 jobs:
-  update-events:
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
+    permissions:
+      contents: read
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: python -m pip install -r collectors/requirements.txt
-
-      - name: Collect verified events
-        run: python collectors/update_events.py
-
-      - name: Validate match data
+          python-version: '3.11'
+      - run: python -m pip install -r collectors/requirements.txt
+      - name: Run collector tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Validate existing match data
         run: python collectors/validate.py
+      - name: Validate existing events (empty allowed before first run)
+        run: python collectors/validate_events.py --allow-empty
+      - name: Check frontend syntax
+        run: node --check app.js
+      - name: Test frontend event data rendering
+        run: node tests/test_frontend.cjs
 
-      - name: Publish updated event data
+  collect:
+    needs: verify
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      ready: ${{ steps.ready.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r collectors/requirements.txt
+      - name: Collect verified events
+        id: collector
+        continue-on-error: true
+        run: python collectors/update_events.py
+      - name: Validate new events
+        run: python collectors/validate_events.py
+      - name: Validate matches
+        run: python collectors/validate.py
+      - name: Commit validated event updates
         run: |
           git add data/events.json
           if git diff --cached --quiet; then
-            echo "No event updates."
+            echo 'No event changes'
           else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -m "Update verified NA CS2 events"
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'Update verified NA CS2 event data'
             git push
           fi
+      - name: Ready for deployment
+        id: ready
+        run: echo "ready=true" >> "$GITHUB_OUTPUT"
+      - name: Report source problems
+        if: steps.collector.outcome == 'failure'
+        run: |
+          echo "::warning::One or more sources failed; check Collect verified events."
+          echo "### Partial source warning" >> "$GITHUB_STEP_SUMMARY"
+          echo "Some sources failed. Valid existing records were retained." >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: [verify, collect]
+    if: always() && needs.verify.result == 'success' && (github.event_name == 'push' || needs.collect.outputs.ready == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Package static site
+        run: |
+          mkdir -p _site/data
+          cp index.html app.js style.css _site/
+          cp data/matches.json data/sources.json data/events.json _site/data/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
