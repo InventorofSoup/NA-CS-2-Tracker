@@ -1,75 +1,132 @@
-"""Conservative event discovery for two official NA CS2 organizer pages.
+"""Conservative event-date collector for official Crossfire and NSTLGA sources.
 
-Only publishes event-level dates. It never fabricates individual match times.
-Dependencies: requests, beautifulsoup4. Run from repository root.
+Events only. Does not invent individual CS2 fixtures, scores, or stream times.
 """
+from __future__ import annotations
 import datetime as dt
 import json
-import os
 import re
 import sys
 from pathlib import Path
-
 import requests
 from bs4 import BeautifulSoup
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'data' / 'events.json'
-SOURCES = [
-    ('crossfire', 'Crossfire', 'Crossfire Season 7', 'https://www.crossfire.to/',
-     r'Nov\s*2\s*(?:to|[-–])\s*Dec\s*13\s*,?\s*2026', '2026-11-02', '2026-12-13'),
-    ('nstlga', 'NSTLGA', 'NSTLGA Black Pearl Cup', 'https://www.nstlga.gg/events/black-pearl-cup',
-     r'DEC\s*8\s*[-–]\s*18\s*,?\s*2026', '2026-12-08', '2026-12-18'),
-]
+OUT = ROOT / "data" / "events.json"
+AGENT = "NA-CS2-Tracker/0.2.2 (+https://github.com/InventorofSoup/NA-CS-2-Tracker)"
+SOURCES = (
+    {"id":"crossfire-2026-season-7", "organizer_id":"crossfire", "organizer":"Crossfire",
+     "name":"Crossfire Season 7", "source_url":"https://www.crossfire.to/",
+     "fetch_urls":("https://raw.githubusercontent.com/CrossfireGG/Season-7/main/README.md",
+                   "https://www.crossfire.to/"),
+     "identity":(r"\bcrossfire\b",r"\bseason\s*0?7\b"),"year":2026},
+    {"id":"nstlga-2026-black-pearl", "organizer_id":"nstlga", "organizer":"NSTLGA",
+     "name":"NSTLGA Black Pearl Cup", "source_url":"https://www.nstlga.gg/events/black-pearl-cup",
+     "fetch_urls":("https://www.nstlga.gg/events/black-pearl-cup",),
+     "identity":(r"\bnstlga\b",r"\bblack\s+pearl\s+cup\b"),"year":2026}
+)
+MONTH = r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?"
+SEP = r"(?:to|[-–—])"
+TWO = re.compile(rf"\b(?P<m1>{MONTH})\.?\s+(?P<d1>\d{{1,2}})\s*{SEP}\s*(?P<m2>{MONTH})\.?\s+(?P<d2>\d{{1,2}})\s*,?\s*(?P<y>20\d{{2}})\b",re.I)
+ONE = re.compile(rf"\b(?P<m1>{MONTH})\.?\s+(?P<d1>\d{{1,2}})\s*{SEP}\s*(?P<d2>\d{{1,2}})\s*,?\s*(?P<y>20\d{{2}})\b",re.I)
+MONTHS = {x:i for i,x in enumerate(("jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"),1)}
 
+def text_content(body, url):
+    if url.lower().split("?",1)[0].endswith(".md"):
+        text=body
+    else:
+        soup=BeautifulSoup(body,"html.parser")
+        for elt in soup(["script","style","noscript","template"]):
+            elt.decompose()
+        text=soup.get_text(" ",strip=True)
+    return re.sub(r"\s+"," ",text.replace("\u00a0"," ").replace("\u202f"," ")).strip()
 
-def parse_event(source, html):
-    sid, organizer, title, url, date_pattern, start, end = source
-    soup = BeautifulSoup(html, 'html.parser')
-    for tag in soup(['script', 'style', 'noscript']):
-        tag.decompose()
-    text = soup.get_text(' ', strip=True)
-    if not re.search(date_pattern, text, re.I):
-        raise ValueError(f'{sid}: expected official event dates not found; manual review needed')
-    if sid == 'crossfire' and not re.search(r'Season\s*(?:0?7|07)', text, re.I):
-        raise ValueError('crossfire: event identity missing')
-    if sid == 'nstlga' and not re.search(r'Black\s+Pearl', text, re.I):
-        raise ValueError('nstlga: event identity missing')
-    return {'id': sid + '-2026-' + ('season-7' if sid == 'crossfire' else 'black-pearl'),
-            'organizer_id': sid, 'organizer': organizer, 'name': title,
-            'start_date': start, 'end_date': end, 'source_url': url,
-            'detail_level': 'event_only', 'verified_at': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')}
+def event_range(text, year):
+    # Prefer the date range in the beginning of the official page, not unrelated rounds.
+    lead = text[:2500]
+    candidates = [(x.start(), x, False) for x in TWO.finditer(lead)]
+    candidates += [(x.start(), x, True) for x in ONE.finditer(lead)]
+    for _,match,same in sorted(candidates,key=lambda x:x[0]):
+        if int(match.group("y"))!=year:
+            continue
+        m1=MONTHS[match.group("m1")[:3].lower()]
+        m2=m1 if same else MONTHS[match.group("m2")[:3].lower()]
+        try:
+            start=dt.date(year,m1,int(match.group("d1")))
+            end=dt.date(year,m2,int(match.group("d2")))
+        except ValueError:
+            continue
+        if start<=end and (end-start).days<=100:
+            return start.isoformat(),end.isoformat()
+    raise ValueError("expected official event date range not found")
 
+def parse_event(source, body, url):
+    text=text_content(body,url)
+    if not all(re.search(pattern,text,re.I) for pattern in source["identity"]):
+        raise ValueError("official event identity not found")
+    start,end=event_range(text,source["year"])
+    return {
+        "id":source["id"],"organizer_id":source["organizer_id"],"organizer":source["organizer"],
+        "name":source["name"],"start_date":start,"end_date":end,
+        "source_url":source["source_url"],"verification_url":url,
+        "detail_level":"event_only","verified_at":dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    }
 
-def main():
-    old = json.loads(OUT.read_text(encoding='utf-8')) if OUT.exists() else []
-    existing = {e['id']: e for e in old}
-    failures = []
+def fetch_event(source, session=requests):
+    errors=[]
+    for url in source["fetch_urls"]:
+        try:
+            response=session.get(url,timeout=20,headers={"User-Agent":AGENT})
+            response.raise_for_status()
+            event=parse_event(source,response.text,url)
+            print("Verified:",event["name"],"via",url)
+            return event
+        except (requests.RequestException,ValueError) as exc:
+            errors.append(f"{url}: {exc}")
+    raise ValueError("; ".join(errors))
+
+def update_events(path=OUT,session=requests):
+    prior=json.loads(path.read_text(encoding="utf8")) if path.exists() else []
+    if not isinstance(prior,list):
+        raise ValueError("existing events feed must be an array")
+    known={}
+    for old in prior:
+        entry=dict(old)
+        entry.setdefault("verification_url",entry.get("source_url"))
+        known[entry["id"]]=entry
+    failures=0
+    checked=0
     for source in SOURCES:
         try:
-            response = requests.get(source[3], timeout=25, headers={'User-Agent': 'NA-CS2-Tracker/0.2 (+https://github.com/InventorofSoup/NA-CS-2-Tracker)'})
-            response.raise_for_status()
-            event = parse_event(source, response.text)
-            prior = existing.get(event['id'])
-            if prior and all(prior.get(k) == event[k] for k in ('start_date', 'end_date', 'name', 'source_url')):
-                event['verified_at'] = prior.get('verified_at', event['verified_at'])
-            existing[event['id']] = event
-            print('Verified event:', event['name'])
-        except (requests.RequestException, ValueError) as exc:
-            failures.append(f'{source[0]}: {exc}')
-            print('WARNING:', failures[-1], file=sys.stderr)
-    # Preserve previously verified entries when a source is temporarily unavailable.
-    if not existing:
-        raise SystemExit('No verified event data; refusing to publish empty output')
-    output = sorted(existing.values(), key=lambda e: (e['start_date'], e['id']))
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    new = json.dumps(output, indent=2, ensure_ascii=False) + '\n'
-    if not OUT.exists() or OUT.read_text(encoding='utf-8') != new:
-        OUT.write_text(new, encoding='utf-8')
-    print(f'{len(output)} event(s) retained; {len(failures)} source error(s)')
-    if failures:
-        raise SystemExit('One or more sources failed; previous verified data preserved')
+            event=fetch_event(source,session)
+            previous=known.get(event["id"])
+            fields=("organizer","name","start_date","end_date","source_url","verification_url","detail_level")
+            if previous and all(previous.get(k)==event.get(k) for k in fields):
+                event["verified_at"]=previous.get("verified_at",event["verified_at"])
+            known[event["id"]]=event
+            checked+=1
+        except ValueError as exc:
+            failures+=1
+            print(f"::warning title={source['organizer']} fetch failed::{exc}",file=sys.stderr)
+    if not known:
+        raise ValueError("No verified events; refusing to publish empty data")
+    events=sorted(known.values(),key=lambda e:(e["start_date"],e["id"]))
+    result=json.dumps(events,indent=2,ensure_ascii=False)+"\n"
+    path.parent.mkdir(parents=True,exist_ok=True)
+    if not path.exists() or path.read_text(encoding="utf8")!=result:
+        temporary=path.with_suffix(path.suffix+".tmp")
+        temporary.write_text(result,encoding="utf8")
+        temporary.replace(path)
+    print(f"Events: {len(events)} retained, {checked} checked successfully, {failures} source failures")
+    return checked,failures
 
+def main():
+    try:
+        _,failed=update_events()
+    except (ValueError,OSError,json.JSONDecodeError) as exc:
+        print(f"::error title=Event collector failed::{exc}",file=sys.stderr)
+        return 1
+    return 1 if failed else 0
 
-if __name__ == '__main__':
-    main()
+if __name__=="__main__":
+    sys.exit(main())
